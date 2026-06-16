@@ -1,0 +1,12 @@
+{
+  "ticket_slug": "050-slice-c-recovery-shaping",
+  "parent_ticket": "050-cooperative-track-reacquisition",
+  "predecessor": "050-slice-b-team-reward",
+  "current_stage": "P",
+  "last_approved_stage": "P",
+  "next_action": "PLAN LOCKED (2026-06-16). Pre-req DONE: privileged-critic __post_init__-bypass FIXED + verified (cfg.finalize_observation_and_state_spaces() refactor + env __init__ pre-super() call; /tmp/test_critic_resize.py 6/6 PASS: base state_space=144, +3 gt_target, +6 with velocity, idempotent). KEY FINDING: peer target bearing ALREADY in obs (other_ray_w = bbox-center unprojection) -> parent C3 stale, 'add peer bearing' redundant; lever is the REWARD GRADIENT. Next: build Phase 1 = reacq_shaping/ module (PBRS pointing potential Phi=0.5(1+d.d*), F=gamma*Phi'-Phi, gated to ReacquisitionTracker DEFICIT regime) + env wiring (new reward key reacq_shaping, default-off, bit-exact) + peer_bearing_ablate flag (zero other_ray_w) + experiments t050c_shaping/t050c_ablation. Then Phase 2 go/no-go 1 seed vs control + scale sweep + early ablation read; gate = beat C2 0.385 & ablation worse. Phase 3 multi-seed>=3. RESERVE: peer position-estimate obs only if Phase 2 plateaus (fusion-hardness, not incentive).",
+  "slices_total": null,
+  "slices_completed": [],
+  "created": "2026-06-16",
+  "updated": "2026-06-16"
+}

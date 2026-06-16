@@ -243,6 +243,15 @@ class IrisMA6TestEnv(DirectMARLEnv):
         if cfg.enable_track_loss_scenario:
             cfg.apply_track_loss_scenario_overlay()
 
+        # Re-finalize obs/critic state_space sizing AFTER any Hydra `from_dict` overrides
+        # (e.g. enable_critic_gt_target for the privileged critic) and BEFORE
+        # super().__init__() reads cfg.observation_spaces / cfg.state_space. Hydra's
+        # from_dict bypasses cfg.__post_init__, so without this the critic state_space
+        # stays sized for the pre-override flags -> tensor-size mismatch in the critic
+        # preprocessor at first record_transition. Idempotent: a no-op when no
+        # sizing-relevant flag was overridden.
+        cfg.finalize_observation_and_state_spaces()
+
         # Call parent constructor
         super().__init__(cfg, render_mode, **kwargs)
 

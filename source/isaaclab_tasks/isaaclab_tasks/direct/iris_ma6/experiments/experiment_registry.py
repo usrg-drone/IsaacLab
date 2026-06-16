@@ -893,10 +893,11 @@ register_experiment(ExperimentCfg(
 #   train_mappo_rnn_hydra.py --experiment b050_team_reward \
 #     --checkpoint logs/skrl/iris_ma6/2026-06-11_05-17-30_..._net_width_wide/agent_drone_0_final.pt
 # sigma_theta left at cfg default (0.005); intrinsics-implied ~0.0036 at zoom — override per regime.
-# NOTE: enable_critic_gt_target (GT target -> critic) is intentionally NOT set here — it sizes
-# state_space in __post_init__, so setting it via an override (experiment/Hydra from_dict) lands too
-# late and would mismatch the critic. It is an optional follow-up needing a state_space re-finalize
-# at env __init__ (cf. ticket 050 R gap #5 / the Slice-A Hydra-bypass lesson).
+# NOTE: enable_critic_gt_target (GT target -> critic) is left OFF for these committed A/B arms (they
+# isolate the reward, not the critic). It is now SAFE to enable via override: the env __init__ calls
+# cfg.finalize_observation_and_state_spaces() pre-super(), which re-sizes state_space for any
+# Hydra-from_dict-overridden critic flag (the __post_init__-bypass fix; cf. R gap #5 / Slice-A overlay).
+# The Slice-C recovery-shaping runs use it for the privileged critic.
 
 register_experiment(ExperimentCfg(
     name="t050b_team_reward",

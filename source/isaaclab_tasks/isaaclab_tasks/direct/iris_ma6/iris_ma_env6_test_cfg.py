@@ -1179,6 +1179,25 @@ class IrisMA6TestEnvCfg(DirectMARLEnvCfg):
                 type="constant", value=0.0, min_value=0.0
             )
 
+        # Observation/state-space sizing depends on flags (enable_triangulation,
+        # enable_prev_action_obs, enable_critic_*) that a Hydra `from_dict` override can
+        # flip AFTER __post_init__ has already run. Do the sizing in a dedicated,
+        # idempotent method that the env __init__ ALSO calls pre-super() so overridden
+        # flags are honored (same Hydra-__post_init__-bypass reason as the Slice-A
+        # track-loss overlay). See finalize_observation_and_state_spaces().
+        self.finalize_observation_and_state_spaces()
+
+    def finalize_observation_and_state_spaces(self):
+        """(Re)compute observation_spaces and the asymmetric-critic state_space from the
+        current flags. Idempotent — safe to call more than once.
+
+        Called once from __post_init__, and AGAIN from the env __init__ before
+        super().__init__() so Hydra `from_dict` overrides — which bypass __post_init__ —
+        of obs/critic-sizing flags are reflected. Without the second call, overriding
+        e.g. ``enable_critic_gt_target`` leaves ``state_space`` sized for the pre-override
+        flags, mismatching the centralized critic and its running-stats preprocessor at
+        the first record_transition.
+        """
         # Update observation space:
         # Ego: 31D (pos, vel, rpy, ang_vel_b, lin_acc_b, gimbal_yaw_body, gimbal_pitch_body,
         #           ray_direction_w, combined_ang_vel_w, bbox_aoi, zoom, effective_hfov,

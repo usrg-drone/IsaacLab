@@ -10,16 +10,20 @@
 
 ### Diagnosis — why cooperation is absent (grounded in the obs topology)
 
-Per-agent observation = **26D ego + 14D per peer + 6D triangulation**. The peer block carries:
-`position(3), velocity(3), gimbal_azimuth_world(1), gimbal_elevation_world(1), gimbal_az_rate(1), gimbal_el_rate(1), zoom(1), bbox_empty(1), data_age(1), bbox_age(1)`.
+Per-agent observation = **31D ego + 16D per peer + 6D triangulation**. The peer block carries:
+`position(3), velocity(3), target_ray_w(3), camera_sweep_rate_w(3), zoom(1), bbox_empty(1), data_age(1), bbox_age(1)`
+— **CORRECTED 2026-06-16** (was listed as `gimbal_azimuth/elevation_world` + rates): the block has
+*no* gimbal joint angles; `target_ray_w` (`camera_ray_directions_w`) is the peer's *measured
+world-frame bearing to the target*, unprojected from the bbox center through the zoom-adjusted
+intrinsics ([delay_system_v3/derived_field_computers.py:140](../../../../delay_system_v3/derived_field_computers.py#L140)).
 
-So the information for re-acquisition is *mostly present* (peer position + peer **world-frame gimbal ray** + a binary "peer sees target"). The behavior is blocked by **three structural causes — none of them network capacity**:
+So the information for re-acquisition is *mostly present* (peer position + peer **measured target bearing** `target_ray_w` + a binary "peer sees target"). The behavior is blocked by **three structural causes — none of them network capacity**:
 
 | # | Cause | Mechanism | Fix axis |
 |---|---|---|---|
 | **C1** | **The task never creates the trigger.** | t046 tuned spawn so the target is "near-permanently in view." Single-agent track-loss events — the *only* situation cooperation is for — barely occur in training, so there is near-zero gradient for "recover using peer." | Scenario / curriculum (composes with t045/t046 difficulty-revert) |
 | **C2** | **Reward is ~purely individual, and the cooperative signal vanishes when needed.** | bbox_center=90 vs triangulation=8 (>10× selfish). And triangulation needs ≥2 valid detections, so the 6D fused-estimate channel goes **NaN the instant one agent loses the target** — the most direct "where is it" signal disappears exactly at loss. Recovery becomes sparse, delayed-credit, multi-agent exploration. | Reward shaping (team / difference reward) |
-| **C3** | **Peer signal is a proxy and the fusion is hard.** | Agent receives peer *gimbal pointing*, not peer *target bearing/estimate*; must infer "peer gimbal az/el when peer.bbox_empty=0 ≈ bearing to target," then intersect with its own stale belief — an implicit recurrent Bayesian inference with no scaffolding. | Communication channel + (optional) learned cooperative observer |
+| **C3** | **Peer bearing is present but hard to *fuse* — and unrewarded during the deficit.** | **CORRECTED 2026-06-16** (was: "agent receives peer gimbal pointing, not target bearing"). The peer's *measured target bearing* (`target_ray_w`) is already in obs, gated by `peer.bbox_empty`. Residual difficulty is bearing→position: a bearing is a *line*, so the agent must fuse it with its own stale belief/range (parallax). But the binding gap is the **reward gradient to act on it** during a deficit (= C2's zero-credit-for-the-lost-agent), not the channel's absence. | Gated recovery shaping (Slice C) + optional learned observer |
 
 C1 is load-bearing: until track-loss events exist, no reward or architecture can teach recovery.
 
@@ -44,10 +48,15 @@ The team objective is minimizing the target's **posterior covariance** (equivale
 - Leverage the centralized critic for credit assignment.
 - **Gate**: re-acquisition success rate and time-to-reacquire improve vs the C2-baseline reward.
 
-**Slice C — Sharpen the cooperative channel.**
-- Broadcast each agent's target *bearing/estimate* explicitly (the deploy stack already publishes `chosen_target_ray_w` / `target_rays_w` — the exact signal). Add to the peer obs block.
-- Optional: learned cooperative observer (recurrent belief / differentiable filter).
-- **Gate**: ablating the peer-bearing channel measurably degrades re-acquisition (the paper's central ablation).
+**Slice C — Reward the recovery + ablate the (already-present) cooperative channel.** See
+[slice-c-recovery-shaping/](slice-c-recovery-shaping/).
+- **CORRECTED 2026-06-16**: the peer *bearing* is ALREADY in obs (`target_ray_w`), so it need not be
+  added. The lever is a **dense, gated recovery reward** — PBRS on pointing, gated to the
+  single-agent-deficit regime where the peer bearing is observable (makes the reward realizable).
+- Reserve: a peer target *position estimate* in obs (ray resolved to a point) only if bearing→position
+  fusion (not the incentive) is the bottleneck; optional learned cooperative observer.
+- **Gate**: ablating the peer-bearing channel (mask `target_ray_w`) measurably degrades re-acquisition
+  (the paper's central ablation) — runs on the existing channel, no new obs needed.
 
 **Slice D — Architecture (LAST).**
 - Attention / GNN comm over peers, primarily for the >2-agent scaling figure. Deprioritized: t048 showed capacity is not the binding constraint.
