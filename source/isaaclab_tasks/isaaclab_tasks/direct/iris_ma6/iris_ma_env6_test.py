@@ -43,6 +43,7 @@ from .iris_ma_env6_test_cfg import (
 )
 from .cooperation_metrics import ReacquisitionTracker
 from .information_reward import InformationReward
+from .reacq_shaping import ReacqShaper
 from .target_controller import TargetController
 from .triangulation import (
     TriangulationResult,
@@ -588,22 +589,27 @@ class IrisMA6TestEnv(DirectMARLEnv):
         self._step_rewards: Dict[str, Dict[str, torch.Tensor]] = {}
 
         # Episode reward tracking for logging
+        _reward_keys = [
+            "action_sum",
+            "action_delta",
+            "bbox_center",
+            "bbox_size",
+            "triangulation",
+            "cbf_penalty",
+            "collision",
+            "altitude",
+            "target_proximity",
+            "est_error_gt",
+            "est_error_e2e",
+        ]
+        # Ticket 050 Slice C: track the shaping term only when enabled (keeps logging/episode-sums
+        # bit-exact with the baseline when off — the reward dict likewise omits the key).
+        if self.cfg.reacq_shaping.enabled:
+            _reward_keys.append("reacq_shaping")
         self._episode_sums = {
             agent: {
                 key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
-                for key in [
-                    "action_sum",
-                    "action_delta",
-                    "bbox_center",
-                    "bbox_size",
-                    "triangulation",
-                    "cbf_penalty",
-                    "collision",
-                    "altitude",
-                    "target_proximity",
-                    "est_error_gt",
-                    "est_error_e2e",
-                ]
+                for key in _reward_keys
             }
             for agent in self.cfg.possible_agents
         }
@@ -840,6 +846,22 @@ class IrisMA6TestEnv(DirectMARLEnv):
         # (Slice 3 drives this from the curriculum; Slice 2 runs at full strength).
         self.progress_rebalance: float = 1.0
         self._info_sigma_theta_logged = False
+
+        # Gated recovery-shaping reward (ticket 050, Slice C). Default-off.
+        if self.cfg.reacq_shaping.enabled:
+            if self.cfg.reacq_shaping.gate_to_deficit and self._reacq_tracker is None:
+                raise ValueError(
+                    "reacq_shaping.enabled=True with gate_to_deficit=True requires "
+                    "cooperation_metrics.enable=True (the DEFICIT mask source)."
+                )
+            self._reacq_shaper = ReacqShaper(
+                cfg=self.cfg.reacq_shaping,
+                num_envs=self.num_envs,
+                num_agents=self.cfg.num_agents,
+                device=self.device,
+            )
+        else:
+            self._reacq_shaper = None
 
         # Facility position for approach mode (at each environment's origin)
         # Clone env_origins so targets approach their local environment center
@@ -1770,6 +1792,26 @@ class IrisMA6TestEnv(DirectMARLEnv):
             cam_pos_w[:, ai, :] = self._root_pos_w[aid]
         return bearings_w, cam_pos_w, self._per_agent_bbox_nonempty
 
+    def _gather_shaping_signals(self, reward_states):
+        """Per-agent camera boresight + position for the recovery-shaping potential (Slice C).
+
+        Returns (boresight_w[N,A,3], cam_pos_w[N,A,3]). The boresight is the camera optical axis
+        (camera +Z rotated to world) — defined even when the bbox is empty, unlike
+        camera_ray_directions_w (the bbox-center ray, undefined exactly during a deficit). Pairs with
+        self._target_pos_w (privileged GT, reward-side only).
+        """
+        N = self.num_envs
+        A = self.cfg.num_agents
+        dev = self.device
+        boresight_w = torch.zeros(N, A, 3, device=dev)
+        cam_pos_w = torch.zeros(N, A, 3, device=dev)
+        ez = torch.zeros(N, 3, device=dev)
+        ez[:, 2] = 1.0  # camera optical axis = +Z (see compute_ray_directions_from_bbox)
+        for ai, aid in enumerate(self.cfg.possible_agents):
+            boresight_w[:, ai, :] = quat_rotate(reward_states[aid].data.camera_orientation_w, ez)
+            cam_pos_w[:, ai, :] = self._root_pos_w[aid]
+        return boresight_w, cam_pos_w
+
     def _log_info_sigma_theta(self, reward_states):
         """One-time diagnostic: the intrinsics-implied bearing noise sigma_theta = sigma_pix / f_eff.
 
@@ -2023,6 +2065,21 @@ class IrisMA6TestEnv(DirectMARLEnv):
                 self._log_info_sigma_theta(reward_states)
                 self._info_sigma_theta_logged = True
 
+        # Ticket 050 Slice C: gated recovery shaping (per-agent re-pointing reward during a deficit).
+        # Computed ONCE before the agent loop; F[:, i] is added as the `reacq_shaping` reward key.
+        # WRITE (advances Phi_prev); idempotent within a step via the shaper's time guard.
+        if self._reacq_shaper is not None:
+            _shap_bore, _shap_campos = self._gather_shaping_signals(reward_states)
+            _deficit_mask = (
+                self._reacq_tracker.in_deficit()
+                if self._reacq_tracker is not None
+                else torch.zeros(self.num_envs, self.cfg.num_agents, dtype=torch.bool, device=self.device)
+            )
+            _reacq_shaping_F = self._reacq_shaper.compute_shaping(
+                _shap_bore, _shap_campos, self._target_pos_w, _deficit_mask,
+                t=float(self._sim_time[0].item()),
+            )
+
         # bbox reward scales: curriculum-interpolated 90/30 -> team-phase 30/20 by progress_rebalance
         # (no-op when the information reward is off -> p_rebal contribution is 0, scales unchanged).
         _p_rebal = self.progress_rebalance if self._info_reward is not None else 0.0
@@ -2178,6 +2235,11 @@ class IrisMA6TestEnv(DirectMARLEnv):
                 "est_error_gt": est_error_gt_reward,
                 "est_error_e2e": est_error_e2e_reward,
             }
+
+            # Ticket 050 Slice C: gated recovery shaping (per-step PBRS term, NOT a rate*step_dt
+            # term — see ReacqShapingCfg). Added only when enabled -> bit-exact baseline when off.
+            if self._reacq_shaper is not None:
+                rewards["reacq_shaping"] = _reacq_shaping_F[:, i]
 
             # ---- NaN sanitization (zero out, don't terminate) ----
             for key in rewards:
@@ -2431,6 +2493,9 @@ class IrisMA6TestEnv(DirectMARLEnv):
 
                     # Other agent's camera ray direction in world frame (bbox-based)
                     other_ray_w = other_data.camera_ray_directions_w[:, 0, :]
+                    # Ticket 050 Slice C ablation: mask the peer's measured target bearing.
+                    if self.cfg.peer_bearing_ablate:
+                        other_ray_w = torch.zeros_like(other_ray_w)
 
                     other_obs_parts.append(
                         torch.cat(
@@ -2503,6 +2568,9 @@ class IrisMA6TestEnv(DirectMARLEnv):
 
                     # Other agent's camera ray direction in world frame (bbox-based)
                     other_ray_w = other_gt.camera_ray_directions_w[:, 0, :]
+                    # Ticket 050 Slice C ablation: mask the peer's measured target bearing.
+                    if self.cfg.peer_bearing_ablate:
+                        other_ray_w = torch.zeros_like(other_ray_w)
 
                     other_obs_parts.append(
                         torch.cat(
@@ -3517,6 +3585,10 @@ class IrisMA6TestEnv(DirectMARLEnv):
                 vals = self._reacq_tracker.episode_values(env_ids)
                 self._reacq_episode_buffer.append({k: v.detach().cpu() for k, v in vals.items()})
             self._reacq_tracker.reset(env_ids)
+
+        # Ticket 050 Slice C: clear recovery-shaping Phi_prev / region_prev for the reset envs.
+        if self._reacq_shaper is not None:
+            self._reacq_shaper.reset_idx(env_ids)
 
         # Reset detection stats, collision count, and tracking-lost counter
         for key in self._detection_stats:

@@ -26,6 +26,7 @@ from .cbf_safety import CBFManagerCfg
 from .cbf_safety.cbf_cfg import CPARewardShaperCfg
 from .cooperation_metrics import ReacquisitionTrackerCfg
 from .information_reward import InformationRewardCfg
+from .reacq_shaping import ReacqShapingCfg
 from .controller import DroneControllerCfg
 from .controller.gain_randomization_cfg import GainRandomizationCfg
 from .controller.tuning.tuning_results.px4_matched import PX4_MATCHED_CONTROLLER_CFG
@@ -835,6 +836,17 @@ class IrisMA6TestEnvCfg(DirectMARLEnvCfg):
     """Team / difference (counterfactual) information reward (ticket 050, Slice B). Default-off
     (enable=False) keeps the env bit-exact; when enabled it replaces the shared trace reward in the
     `triangulation` slot with the per-agent marginal-information difference reward."""
+
+    reacq_shaping: ReacqShapingCfg = ReacqShapingCfg()
+    """Gated potential-based recovery-shaping reward (ticket 050, Slice C). Default-off
+    (enabled=False) keeps the env bit-exact; when enabled it adds a `reacq_shaping` reward term that
+    densifies the per-agent gradient for re-pointing during a single-agent deficit. With
+    ``gate_to_deficit`` (default) it requires ``cooperation_metrics.enable=True`` for the DEFICIT mask."""
+
+    peer_bearing_ablate: bool = False
+    """Ablation (ticket 050, Slice C / the paper's central claim): when True, zero the peer
+    `other_ray_w` (measured target bearing) slots in the observation while keeping `bbox_empty`, so
+    a policy cannot use the peer's bearing to re-acquire. Default False = full channel."""
 
     enable_triangulation: bool = False
     """Append triangulation tail to the actor observation (and draw the observed-triangulation

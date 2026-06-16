@@ -300,6 +300,15 @@ class ReacquisitionTracker:
 
     # ------------------------------------------------------------------ READ
 
+    def in_deficit(self) -> torch.Tensor:
+        """[N, A] bool — agents currently in a peer-assisted DEFICIT (ego-lost & a peer holds).
+
+        READ — reflects the state machine AFTER the latest :meth:`update`; safe to call any number
+        of times. Used by the recovery-shaping reward (Slice C) to gate shaping to the realizable
+        regime (the peer's measured bearing is in the obs exactly while a peer holds the target).
+        """
+        return self._state == _DEFICIT
+
     def episode_summary(self, env_ids: torch.Tensor) -> dict[str, torch.Tensor]:
         """Per-episode aggregate scalars (0-dim tensors) for ``env_ids``, ready for extras["log"]."""
         e = env_ids

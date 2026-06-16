@@ -923,6 +923,45 @@ register_experiment(ExperimentCfg(
 
 
 # ===========================================================================
+# T050C: Cooperative track re-acquisition — Slice C (gated recovery shaping + channel ablation)
+# ===========================================================================
+# Adds the gated PBRS recovery-shaping reward on top of the Slice-B info reward (the recovery-gradient
+# fix for the null Slice-B result). Attribution comparisons (all warm-started from the t048 wide lead):
+#   t050c_shaping  vs  t050b_team_reward       -> isolates the shaping (info held on in both)
+#   t050c_shaping  vs  t050b_baseline_no_info  -> shaping+info combined vs C2 control
+#   t050c_ablation vs  t050c_shaping           -> the paper's central claim (mask the peer bearing)
+# Critic held constant (enable_full_critic_priv_obs, no gt_target) for the Phase-2 go/no-go so the
+# comparison isolates the reward. For the Phase-3 privileged-critic variant, add the override
+# `enable_critic_gt_target: True` (now safe — the __post_init__-bypass fix re-sizes state_space).
+# Calibrate reacq_shaping.shaping_scale in Phase 2 (e.g. agent/env override sweep ~1.0/2.0/4.0).
+
+register_experiment(ExperimentCfg(
+    name="t050c_shaping",
+    description="Ticket 050 Slice C: gated recovery shaping + Slice-B info reward, under the scenario",
+    group="T050C",
+    env_overrides={
+        "reacq_shaping.enabled": True,
+        "information_reward.enabled": True,
+        "enable_track_loss_scenario": True,
+        "cooperation_metrics.enable": True,
+    },
+))
+
+register_experiment(ExperimentCfg(
+    name="t050c_ablation",
+    description="Ticket 050 Slice C ablation: t050c_shaping with the peer bearing (other_ray_w) masked",
+    group="T050C",
+    env_overrides={
+        "reacq_shaping.enabled": True,
+        "information_reward.enabled": True,
+        "enable_track_loss_scenario": True,
+        "cooperation_metrics.enable": True,
+        "peer_bearing_ablate": True,
+    },
+))
+
+
+# ===========================================================================
 # Experiment Suites
 # ===========================================================================
 
