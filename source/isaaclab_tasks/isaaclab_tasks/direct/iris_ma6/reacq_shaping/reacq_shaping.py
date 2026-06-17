@@ -13,17 +13,21 @@ on the recovery action** — re-aiming the camera at the target — via potentia
     Phi_i(s) = 0.5 * (1 + d_i . d_i*)                # pointing alignment, in [0, 1]
         d_i  = camera boresight (world, optical axis = quat_rotate(camera_orientation_w, +z))
         d_i* = normalize(target_pos_w - cam_pos_i)   # GT bearing (privileged, reward-only)
-    F_i      = scale * ( gamma * Phi_i(s') - Phi_i(s) )
+    F_i      = scale * ( gamma * Phi_i(s') - Phi_i(s) ),   gamma = 1 by default
 
 `d_i` is the boresight (always defined), NOT the bbox-center ray (undefined exactly when the agent has
 lost the target — the regime that matters). Phi=1 when aimed at the target.
 
-Why PBRS: F = gamma*Phi' - Phi leaves the task optimum unchanged (Ng et al. 1999) — it only densifies
-the *path* to a re-acquisition the task already rewards (bbox + r_diff once re-acquired). It targets
-the dominant loss mode (FOV-exit -> re-aim), and is realizable: it is **gated to the single-agent
-deficit** (ego-lost & peer-holds), the regime where the peer's measured bearing is in the obs, so the
-policy can climb it from observation. GT enters the reward only (training-time), never the obs, so the
-peer-channel ablation stays valid.
+Reward = scale*(Phi' - Phi) (gamma=1), applied on steps where the agent was in a peer-assisted DEFICIT
+at the START of the step. This rewards *improvement* in pointing while lost and the recovery step
+itself, penalizes pointing *away*, and — crucially — does NOT tax merely holding alignment (constant
+Phi -> F=0). It targets the dominant loss mode (FOV-exit -> re-aim) and is realizable: the gate is the
+regime where the peer's measured bearing is in the obs, so the policy can climb it from observation. GT
+enters the reward only (training-time), never the obs, so the peer-channel ablation stays valid.
+
+v1 (gamma=0.99 + gate on the CURRENT-step deficit) failed: the -(1-gamma)*Phi drip became a net
+'deficit tax' on staying aimed, and the recovery step (DEFICIT->HOLD) was gated out — regressing
+tracking (doc/experiments 2026-06-17). Fixed here: gamma=1 + gate on region_prev.
 
 Calling contract (see CONTEXT.md §4.4):
 - compute_shaping(...): WRITE -- advances Phi_prev / region_prev. Call once per sim step in
@@ -99,10 +103,12 @@ class ReacqShaper:
         else:
             region = torch.ones_like(deficit_mask, dtype=torch.bool)
 
-        # Telescoping is valid only across two consecutive in-region steps -> zeroes the entry step
-        # and the first post-reset step (no spurious spike), and zeroes everything outside the region.
-        active = region & self._region_prev
-        f_raw = self._cfg.gamma * phi - self._phi_prev  # [N, A]
+        # Gate on whether the agent was in the region at the START of this step (region_prev), NOT
+        # `region & region_prev`. This credits: entry step -> 0 (region_prev False), mid-deficit
+        # re-pointing, AND the recovery step (DEFICIT->HOLD: region False but region_prev True, so the
+        # big +ΔΦ that achieves recovery is rewarded — v1 gated it out). First post-reset step -> 0.
+        active = self._region_prev
+        f_raw = self._cfg.gamma * phi - self._phi_prev  # gamma=1 -> pure ΔΦ, no holding tax [N, A]
         F = torch.where(active, f_raw, torch.zeros_like(f_raw)) * self._cfg.shaping_scale
 
         # Advance state — copy INTO the owned buffers. Do NOT do `self._region_prev = region`:

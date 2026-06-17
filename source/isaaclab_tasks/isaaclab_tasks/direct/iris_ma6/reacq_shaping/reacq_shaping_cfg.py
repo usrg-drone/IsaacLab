@@ -24,20 +24,25 @@ class ReacqShapingCfg:
     enabled: bool = False
     """Whether the recovery shaping is active. Default False = bit-exact baseline."""
 
-    shaping_scale: float = 2.0
-    """Scale on the per-step potential difference F = scale * (gamma*Phi' - Phi). Calibrate so a full
-    recovery's shaping return is comparable to the bbox reward gained on re-acquisition (Phase-2 sweep).
-    NOTE: this is a per-step PBRS term, NOT a rate*dt term — it is added to the reward without the
-    step_dt factor the other reward components carry."""
+    shaping_scale: float = 10.0
+    """Scale on the per-step potential difference F = scale * (gamma*Phi' - Phi). With gamma=1 a
+    successful recovery telescopes to ~scale*(Phi_recovered - Phi_entry) ~ scale; calibrate so that is
+    a meaningful (non-dominant) fraction of the bbox/triangulation gained on re-acquisition
+    (Phase-2 sweep, e.g. 10/20/40). NOTE: per-step term, NOT a rate*dt term — added without step_dt.
+    (v1 used 2.0 with gamma=0.99 + gate-on-current-deficit; that net-NEGATIVE 'deficit tax' regressed
+    tracking — see doc/experiments 2026-06-17.)"""
 
-    gamma: float = 0.99
-    """Discount used in the potential difference. MUST match the agent's discount_factor for the PBRS
-    optimality-invariance to hold (skrl_mappo_cfg.yaml discount_factor=0.99)."""
+    gamma: float = 1.0
+    """Discount in the potential difference F = gamma*Phi' - Phi. **1.0** (pure potential difference):
+    holding alignment during a deficit gives F=0 (NO 'deficit tax'); only *improvement* in pointing is
+    rewarded and *degradation* penalized. gamma<1 (e.g. 0.99) re-introduces a -(1-gamma)*Phi per-step
+    tax on staying aimed during a deficit — the v1 failure mode; do not use unless ablating."""
 
     gate_to_deficit: bool = True
-    """If True (default), F is nonzero only while the agent is in a peer-assisted DEFICIT
-    (ReacquisitionTracker state) — the realizable regime. If False, F applies in every state (pure
-    PBRS); requires nothing from the tracker (an ablation arm)."""
+    """If True (default), F is nonzero only on steps where the agent was in a peer-assisted DEFICIT at
+    the START of the step (ReacquisitionTracker state last step) — the realizable regime. This credits
+    the entry step with 0, mid-deficit re-pointing, AND the recovery step (DEFICIT->HOLD). If False, F
+    applies in every state (pure PBRS); requires nothing from the tracker (an ablation arm)."""
 
     potential_kernel: str = "cosine"
     """Pointing potential kernel. "cosine": Phi = 0.5*(1 + d . d*), d = camera boresight (world),

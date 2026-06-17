@@ -15,9 +15,11 @@ re-point at the target during a single-agent deficit** — the sparse/delayed-cr
 - `t` float: current sim time (idempotency guard).
 
 ## Outputs
-- `compute_shaping(...) -> F[N, A]`: per-agent shaping reward `scale * (gamma*Phi' - Phi)`, gated to
-  the deficit regime. Fed into the env reward dict as the `reacq_shaping` key (per-step PBRS term —
-  added WITHOUT the `step_dt` factor the rate-based terms carry).
+- `compute_shaping(...) -> F[N, A]`: per-agent shaping reward `scale * (gamma*Phi' - Phi)`, gamma=1 by
+  default (pure ΔΦ — no 'deficit tax'), applied on steps where the agent was in a DEFICIT at the START
+  of the step (`region_prev`), so the entry step is 0 and the recovery step is credited. Fed into the
+  env reward dict as the `reacq_shaping` key (per-step PBRS term — added WITHOUT the `step_dt` factor
+  the rate-based terms carry).
 
 ## Dependencies
 - `torch`, `isaaclab.utils.configclass`. No Isaac Sim handles. Pure tensor math + small internal state.
@@ -31,9 +33,10 @@ re-point at the target during a single-agent deficit** — the sparse/delayed-cr
 - `reset_idx(env_ids)`: **WRITE** — clears per-(env,agent) state for the given envs. Call in `_reset_idx`.
 
 ## Invariants
-- `Phi in [0, 1]`; `F` bounded by `scale * [-1, gamma]` per step.
-- PBRS leaves the task optimum unchanged (gating relaxes this at regime boundaries — accepted; the
-  goal is a realizable dense recovery signal, not optimality purity).
+- `Phi in [0, 1]`; `F` bounded by `scale * [-1, 1]` per step (gamma=1).
+- Holding alignment during a deficit yields F=0 (no tax) — the v1 (gamma=0.99) failure mode; locked by
+  a regression test. gating + gamma=1 relax strict PBRS optimality-invariance at regime boundaries —
+  accepted; the goal is a realizable dense recovery signal, not optimality purity.
 - `enabled=False` -> not instantiated by the env -> bit-exact baseline.
 
 ## Key files

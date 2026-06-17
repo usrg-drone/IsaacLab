@@ -101,18 +101,18 @@ def run_tests(results: TestResults, device):
     except Exception as e:
         results.add_fail("entry step F=0", traceback.format_exc())
 
-    # 3) F = scale*(gamma*Phi' - Phi) on consecutive in-deficit steps; >0 on re-aim.
+    # 3) F = scale*(Phi' - Phi) (gamma=1) on consecutive in-deficit steps; >0 on re-aim.
     try:
-        cfg = ReacqShapingCfg(shaping_scale=1.0, gamma=0.99)
+        cfg = ReacqShapingCfg(shaping_scale=1.0, gamma=1.0)
         sh = ReacqShaper(cfg, 1, 1, device)
         b, c, t = _inputs(PERP, device=device)
-        sh.compute_shaping(b, c, t, deficit_T, t=0.0)            # entry: Phi=0.5, F=0
+        sh.compute_shaping(b, c, t, deficit_T, t=0.0)            # entry: Phi=0.5, F=0 (region_prev False)
         b, c, t = _inputs(AIM, device=device)
-        F1 = sh.compute_shaping(b, c, t, deficit_T, t=1.0).item()  # Phi'=1.0
-        expected = 1.0 * (0.99 * 1.0 - 0.5)
+        F1 = sh.compute_shaping(b, c, t, deficit_T, t=1.0).item()  # Phi'=1.0, was-in-deficit -> active
+        expected = 1.0 * (1.0 * 1.0 - 0.5)  # 0.5
         assert abs(F1 - expected) < 1e-5, f"F={F1}, expected {expected}"
         assert F1 > 0.0, f"re-aim should reward, F={F1}"
-        results.add_pass(f"F = scale*(gamma*Phi'-Phi) on re-aim ({F1:.4f} > 0)")
+        results.add_pass(f"F = scale*(Phi'-Phi) on re-aim ({F1:.4f} > 0)")
     except Exception as e:
         results.add_fail("PBRS formula / re-aim positive", traceback.format_exc())
 
@@ -130,16 +130,16 @@ def run_tests(results: TestResults, device):
 
     # 5) Idempotency: a second call at the same t returns cached F and does NOT double-advance Phi_prev.
     try:
-        sh = ReacqShaper(ReacqShapingCfg(shaping_scale=1.0, gamma=0.99), 1, 1, device)
+        sh = ReacqShaper(ReacqShapingCfg(shaping_scale=1.0, gamma=1.0), 1, 1, device)
         b, c, t = _inputs(PERP, device=device)
         sh.compute_shaping(b, c, t, deficit_T, t=0.0)            # entry, Phi_prev=0.5
         b, c, t = _inputs(AIM, device=device)
-        Fa = sh.compute_shaping(b, c, t, deficit_T, t=1.0).item()  # advances Phi_prev->1.0
+        Fa = sh.compute_shaping(b, c, t, deficit_T, t=1.0).item()  # advances Phi_prev->1.0 (F=0.5)
         Fb = sh.compute_shaping(b, c, t, deficit_T, t=1.0).item()  # same t -> cached, no advance
         assert abs(Fa - Fb) < 1e-7, f"cached mismatch {Fa} vs {Fb}"
         b, c, t = _inputs(AIM, device=device)
         Fc = sh.compute_shaping(b, c, t, deficit_T, t=2.0).item()  # Phi'=1, Phi_prev should be 1.0
-        expected = 0.99 * 1.0 - 1.0
+        expected = 1.0 * 1.0 - 1.0  # 0.0 (no double-advance AND no holding tax at gamma=1)
         assert abs(Fc - expected) < 1e-5, f"Phi_prev double-advanced? Fc={Fc}, expected {expected}"
         results.add_pass(f"idempotent within a step (no double-advance; Fc={Fc:.4f})")
     except Exception as e:
@@ -162,21 +162,21 @@ def run_tests(results: TestResults, device):
 
     # 7) Ungated (pure PBRS): F nonzero every step after the first, regardless of deficit_mask.
     try:
-        sh = ReacqShaper(ReacqShapingCfg(shaping_scale=1.0, gamma=0.99, gate_to_deficit=False), 1, 1, device)
+        sh = ReacqShaper(ReacqShapingCfg(shaping_scale=1.0, gamma=1.0, gate_to_deficit=False), 1, 1, device)
         b, c, t = _inputs(PERP, device=device)
         sh.compute_shaping(b, c, t, deficit_F, t=0.0)           # entry, F=0
         b, c, t = _inputs(AIM, device=device)
         F1 = sh.compute_shaping(b, c, t, deficit_F, t=1.0).item()  # deficit False, but ungated -> active
-        expected = 0.99 * 1.0 - 0.5
+        expected = 1.0 * 1.0 - 0.5  # 0.5
         assert abs(F1 - expected) < 1e-5, f"ungated F={F1}, expected {expected}"
         results.add_pass(f"ungated PBRS: active everywhere ({F1:.4f})")
     except Exception as e:
         results.add_fail("ungated pure PBRS", traceback.format_exc())
 
     # 8) 2-step realistic: a drone slews its boresight back onto a target over several deficit steps;
-    #    cumulative F > 0 and approximates scale*(gamma^k-telescoped) progress in Phi.
+    #    cumulative F > 0 (recovery credited), and NO negative drip on the held-aim steps.
     try:
-        cfg = ReacqShapingCfg(shaping_scale=2.0, gamma=0.99)
+        cfg = ReacqShapingCfg(shaping_scale=2.0, gamma=1.0)
         sh = ReacqShaper(cfg, 1, 1, device)
         cam = (5.0, -3.0, 2.0)
         target = (12.0, 4.0, 0.0)
@@ -196,7 +196,11 @@ def run_tests(results: TestResults, device):
         assert abs(F_hist[0]) < 1e-7, f"entry not zero: {F_hist[0]}"
         assert sum(F_hist) > 0.0, f"net re-aim reward should be positive: {sum(F_hist):.4f}"
         assert phi_hist[-1] > 0.99, f"final aimed Phi={phi_hist[-1]:.3f}"
-        results.add_pass(f"2-step realistic slew-to-aim: sum(F)={sum(F_hist):.3f}>0, Phi 0->{phi_hist[-1]:.2f}")
+        # The recovery (Phi 0->1) step must be CREDITED, and the held-aim steps after it must NOT be
+        # taxed (gamma=1): no negative F anywhere in this monotone-improving slew.
+        assert max(F_hist) > 0.0, f"recovery step not credited: {F_hist}"
+        assert min(F_hist) > -1e-6, f"holding-aim steps taxed (v1 bug): {F_hist}"
+        results.add_pass(f"2-step slew-to-aim: sum(F)={sum(F_hist):.3f}>0, no holding tax (min={min(F_hist):.3f})")
     except Exception as e:
         results.add_fail("2-step realistic", traceback.format_exc())
 
@@ -217,6 +221,28 @@ def run_tests(results: TestResults, device):
         results.add_pass("multi-env/agent: shape + gate independence")
     except Exception as e:
         results.add_fail("multi-env/agent", traceback.format_exc())
+
+    # 10) REGRESSION (v1 bug): holding aim during a deficit must NOT be taxed at gamma=1 (F=0).
+    try:
+        sh = ReacqShaper(ReacqShapingCfg(shaping_scale=10.0, gamma=1.0), 1, 1, device)
+        b, c, t = _inputs(AIM, device=device)
+        Fs = [sh.compute_shaping(b, c, t, deficit_T, t=float(k)).item() for k in range(5)]
+        # Aim is constant (Phi=1) throughout a persistent deficit -> every step F=0 (no drip).
+        assert all(abs(f) < 1e-6 for f in Fs), f"holding aim taxed at gamma=1 (v1 bug): {Fs}"
+        results.add_pass(f"no holding tax at gamma=1 (constant-aim deficit F={[round(f,4) for f in Fs]})")
+    except Exception as e:
+        results.add_fail("no holding tax (gamma=1)", traceback.format_exc())
+
+    # 11) CONTRAST: gamma<1 DOES tax held aim (the v1 failure mode) — confirms the gamma knob is wired.
+    try:
+        sh = ReacqShaper(ReacqShapingCfg(shaping_scale=1.0, gamma=0.99), 1, 1, device)
+        b, c, t = _inputs(AIM, device=device)
+        sh.compute_shaping(b, c, t, deficit_T, t=0.0)            # entry, F=0
+        F1 = sh.compute_shaping(b, c, t, deficit_T, t=1.0).item()  # holding Phi=1 -> (gamma-1)*1<0
+        assert abs(F1 - (0.99 * 1.0 - 1.0)) < 1e-5 and F1 < 0.0, f"expected ~-0.01 tax, got {F1}"
+        results.add_pass(f"gamma<1 holding-aim tax reproduced (F={F1:.4f}<0) -> why gamma=1 is default")
+    except Exception as e:
+        results.add_fail("gamma<1 tax contrast", traceback.format_exc())
 
 
 def main():

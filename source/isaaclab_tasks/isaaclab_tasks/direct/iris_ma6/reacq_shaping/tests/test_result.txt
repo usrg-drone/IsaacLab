@@ -1,25 +1,27 @@
 ================================================================================
 REACQ_SHAPING TEST SUITE
 ================================================================================
-Device: cuda  Torch: 2.5.1+cu118  Started: 2026-06-16 20:25:31.118462
+Device: cuda  Torch: 2.5.1+cu118  Started: 2026-06-17 11:09:53.499465
 
 ================================================================================
 reacq_shaping tests  (device=cuda)
 ================================================================================
   PASS potential: aim=1 (1.000), perp=0.5 (0.500), away=0 (0.000)
   PASS entry step F=0 (no spike)
-  PASS F = scale*(gamma*Phi'-Phi) on re-aim (0.4900 > 0)
+  PASS F = scale*(Phi'-Phi) on re-aim (0.5000 > 0)
   PASS gate: F=0 outside DEFICIT
-  PASS idempotent within a step (no double-advance; Fc=-0.0100)
+  PASS idempotent within a step (no double-advance; Fc=0.0000)
   PASS reset_idx: post-reset step F=0
-  PASS ungated PBRS: active everywhere (0.4900)
-      [diag] phi=[-0.0, -0.0, 0.0, 1.0, 1.0, 1.0] F=[0.0, 0.0, 0.0, 1.98, -0.02, -0.02]
-  PASS 2-step realistic slew-to-aim: sum(F)=1.940>0, Phi 0->1.00
+  PASS ungated PBRS: active everywhere (0.5000)
+      [diag] phi=[-0.0, -0.0, 0.0, 1.0, 1.0, 1.0] F=[0.0, 0.0, 0.0, 2.0, 0.0, 0.0]
+  PASS 2-step slew-to-aim: sum(F)=2.000>0, no holding tax (min=0.000)
   PASS multi-env/agent: shape + gate independence
+  PASS no holding tax at gamma=1 (constant-aim deficit F=[0.0, 0.0, 0.0, 0.0, 0.0])
+  PASS gamma<1 holding-aim tax reproduced (F=-0.0100<0) -> why gamma=1 is default
 
 ================================================================================
 TEST SUMMARY
 ================================================================================
-Total: 9  Passed: 9  Failed: 0  Errors: 0
+Total: 11  Passed: 11  Failed: 0  Errors: 0
 
 RESULT: PASS
