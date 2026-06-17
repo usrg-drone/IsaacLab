@@ -63,6 +63,10 @@ parser.add_argument("--coop_metrics", action="store_true", default=False,
 parser.add_argument("--track_loss_scenario", action="store_true", default=False,
                     help="Enable the track-loss scenario ceiling raise (ticket 050, Slice A). "
                          "Implies --coop_metrics. Use with --step past the dropout window.")
+parser.add_argument("--peer_bearing_ablate", action="store_true", default=False,
+                    help="Ablation (ticket 050, Slice C): mask the peer target bearing (other_ray_w) "
+                         "in the obs at eval time. Tests whether the policy uses the peer bearing to "
+                         "re-acquire (the paper's central claim). Obs dim unchanged.")
 # Runtime parameter overrides
 parser.add_argument("--delay-override", type=float, default=None,
                     help="Override detection latency in seconds")
@@ -677,6 +681,10 @@ def main(env_cfg, agent_cfg: dict):
         env_cfg.cooperation_metrics.collect_episode_values = True
         print("[EVAL] Cooperative re-acquisition metrics enabled "
               f"(scenario={args_cli.track_loss_scenario})")
+
+    if args_cli.peer_bearing_ablate:
+        env_cfg.peer_bearing_ablate = True
+        print("[EVAL] peer_bearing_ablate=True — peer target bearing (other_ray_w) MASKED in obs.")
 
     if args_cli.step is not None:
         # Pin curriculum to a specific training step (more intuitive than zeroing
