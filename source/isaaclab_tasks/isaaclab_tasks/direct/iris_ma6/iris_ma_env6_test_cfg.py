@@ -848,6 +848,20 @@ class IrisMA6TestEnvCfg(DirectMARLEnvCfg):
     `other_ray_w` (measured target bearing) slots in the observation while keeping `bbox_empty`, so
     a policy cannot use the peer's bearing to re-acquire. Default False = full channel."""
 
+    peer_target_estimate: bool = False
+    """Ticket 050, Slice D: when True, ADD a per-peer resolved target POINT
+    `other_target_pos_est_w(3)` to the obs (alongside the bearing) — `cam_pos + range*bearing`, so the
+    lost agent gets a usable 'where is the target' signal instead of a bare ray it cannot fuse.
+    Default False = bit-exact baseline (no extra obs dims). RANGE SOURCE = option A (sim true range,
+    a depth-sensor/oracle signal -> the point ~= the GT target; this is the UPPER-BOUND test that the
+    fusion is the bottleneck; deploy-faithful range = future EKF/monocular, see slice-d i_design).
+    Changes obs_dim -> clean-start training (NO warm-start surgery)."""
+
+    peer_target_estimate_ablate: bool = False
+    """Ablation for Slice D: when True (with ``peer_target_estimate``), zero the
+    `other_target_pos_est_w` point slots so the policy cannot use the resolved point — expected to
+    DEGRADE re-acquisition if the channel is used (the paper claim). Default False = full channel."""
+
     enable_triangulation: bool = False
     """Append triangulation tail to the actor observation (and draw the observed-triangulation
     ellipsoid in viz). Reward-side triangulation (_triangulation_result_gt / _tri_result_l2 /
@@ -1216,8 +1230,10 @@ class IrisMA6TestEnvCfg(DirectMARLEnvCfg):
         #           bbox, bbox_empty)
         # Inter-agent: 16D per other agent (pos, vel, ray_direction_w, combined_ang_vel_w,
         #              zoom, bbox_empty, data_age, bbox_age)
+        #   + 3D per other agent (other_target_pos_est_w) if peer_target_estimate (ticket 050 Slice D)
         # Optional: +6D triangulation (tri_pos + tri_std)
-        obs_dim = 31 + 16 * (self.num_agents - 1)
+        per_peer_dim = 16 + (3 if getattr(self, "peer_target_estimate", False) else 0)
+        obs_dim = 31 + per_peer_dim * (self.num_agents - 1)
         if self.enable_triangulation:
             obs_dim += 6  # triangulated position (3) + std_dev (3)
         if self.enable_prev_action_obs:

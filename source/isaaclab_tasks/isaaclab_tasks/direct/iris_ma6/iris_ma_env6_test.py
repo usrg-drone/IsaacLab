@@ -1812,6 +1812,23 @@ class IrisMA6TestEnv(DirectMARLEnv):
             cam_pos_w[:, ai, :] = self._root_pos_w[aid]
         return boresight_w, cam_pos_w
 
+    def _peer_target_point(self, cam_pos_w, bearing_w, bbox_empty):
+        """Resolved peer target POINT for the obs (ticket 050 Slice D).
+
+        p_est = cam_pos + range * normalize(bearing); zeroed where the peer has no detection.
+        RANGE = option A: the sim's true range ||GT_target - cam|| — a depth-sensor/oracle signal, so
+        the point ~= the GT target (the UPPER-BOUND test that fusion is the binding constraint). The
+        DIRECTION uses the sensor (bbox-derived, noisy) bearing. Deploy-faithful range (EKF/monocular)
+        is future work (slice-d i_design options D/B/C). GT is used here only for the range SCALAR.
+        Args are (N,3),(N,3),(N,1); returns (N,3).
+        """
+        rng = (self._target_pos_w - cam_pos_w).norm(dim=-1, keepdim=True)   # (N,1) oracle range
+        d = torch.nn.functional.normalize(bearing_w, dim=-1)               # (N,3) sensor bearing
+        point = (cam_pos_w + rng * d) * (1.0 - bbox_empty)                 # (N,3); 0 when peer blind
+        if self.cfg.peer_target_estimate_ablate:
+            point = torch.zeros_like(point)
+        return point
+
     def _log_info_sigma_theta(self, reward_states):
         """One-time diagnostic: the intrinsics-implied bearing noise sigma_theta = sigma_pix / f_eff.
 
@@ -2497,21 +2514,23 @@ class IrisMA6TestEnv(DirectMARLEnv):
                     if self.cfg.peer_bearing_ablate:
                         other_ray_w = torch.zeros_like(other_ray_w)
 
-                    other_obs_parts.append(
-                        torch.cat(
-                            [
-                                other_data.body_position_w,  # (N, 3)
-                                other_data.body_linear_velocity_w,  # (N, 3)
-                                other_ray_w,  # (N, 3) — world-frame ray to target
-                                other_data.body_combined_angular_velocity_w,  # (N, 3) — camera sweep rate
-                                other_data.camera_zoom_level.unsqueeze(-1),  # (N, 1)
-                                other_bbox_empty,  # (N, 1)
-                                data_age,  # (N, 1)
-                                bbox_age,  # (N, 1)
-                            ],
-                            dim=-1,
-                        )
-                    )
+                    _peer_parts = [
+                        other_data.body_position_w,  # (N, 3)
+                        other_data.body_linear_velocity_w,  # (N, 3)
+                        other_ray_w,  # (N, 3) — world-frame ray to target
+                        other_data.body_combined_angular_velocity_w,  # (N, 3) — camera sweep rate
+                        other_data.camera_zoom_level.unsqueeze(-1),  # (N, 1)
+                        other_bbox_empty,  # (N, 1)
+                        data_age,  # (N, 1)
+                        bbox_age,  # (N, 1)
+                    ]
+                    if self.cfg.peer_target_estimate:
+                        _peer_parts.append(self._peer_target_point(
+                            other_data.body_position_w,
+                            other_data.camera_ray_directions_w[:, 0, :],
+                            other_bbox_empty,
+                        ))  # (N, 3) — resolved peer target point (ticket 050 Slice D)
+                    other_obs_parts.append(torch.cat(_peer_parts, dim=-1))
 
                 obs[agent_id] = torch.cat([ego_obs] + other_obs_parts, dim=-1)
 
@@ -2572,21 +2591,23 @@ class IrisMA6TestEnv(DirectMARLEnv):
                     if self.cfg.peer_bearing_ablate:
                         other_ray_w = torch.zeros_like(other_ray_w)
 
-                    other_obs_parts.append(
-                        torch.cat(
-                            [
-                                other_gt.body_position_w,  # (N, 3)
-                                other_gt.body_linear_velocity_w,  # (N, 3)
-                                other_ray_w,  # (N, 3) — world-frame ray to target
-                                other_gt.body_combined_angular_velocity_w,  # (N, 3) — camera sweep rate
-                                self.zoom_level[:, other_idx : other_idx + 1],  # (N, 1)
-                                other_bbox_empty,  # (N, 1)
-                                zero_age,  # (N, 1) — GT, no delay
-                                zero_age,  # (N, 1) — GT, no delay
-                            ],
-                            dim=-1,
-                        )
-                    )
+                    _peer_parts = [
+                        other_gt.body_position_w,  # (N, 3)
+                        other_gt.body_linear_velocity_w,  # (N, 3)
+                        other_ray_w,  # (N, 3) — world-frame ray to target
+                        other_gt.body_combined_angular_velocity_w,  # (N, 3) — camera sweep rate
+                        self.zoom_level[:, other_idx : other_idx + 1],  # (N, 1)
+                        other_bbox_empty,  # (N, 1)
+                        zero_age,  # (N, 1) — GT, no delay
+                        zero_age,  # (N, 1) — GT, no delay
+                    ]
+                    if self.cfg.peer_target_estimate:
+                        _peer_parts.append(self._peer_target_point(
+                            other_gt.body_position_w,
+                            other_gt.camera_ray_directions_w[:, 0, :],
+                            other_bbox_empty,
+                        ))  # (N, 3) — resolved peer target point (ticket 050 Slice D)
+                    other_obs_parts.append(torch.cat(_peer_parts, dim=-1))
 
                 obs[agent_id] = torch.cat([ego_obs] + other_obs_parts, dim=-1)
 

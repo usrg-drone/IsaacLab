@@ -67,6 +67,11 @@ parser.add_argument("--peer_bearing_ablate", action="store_true", default=False,
                     help="Ablation (ticket 050, Slice C): mask the peer target bearing (other_ray_w) "
                          "in the obs at eval time. Tests whether the policy uses the peer bearing to "
                          "re-acquire (the paper's central claim). Obs dim unchanged.")
+parser.add_argument("--peer_target_estimate", action="store_true", default=False,
+                    help="Ticket 050 Slice D: enable the peer target POSITION estimate obs channel "
+                         "(MUST match the trained checkpoint's obs dim).")
+parser.add_argument("--peer_target_estimate_ablate", action="store_true", default=False,
+                    help="Ticket 050 Slice D ablation: mask the peer target point at eval time.")
 # Runtime parameter overrides
 parser.add_argument("--delay-override", type=float, default=None,
                     help="Override detection latency in seconds")
@@ -685,6 +690,13 @@ def main(env_cfg, agent_cfg: dict):
     if args_cli.peer_bearing_ablate:
         env_cfg.peer_bearing_ablate = True
         print("[EVAL] peer_bearing_ablate=True — peer target bearing (other_ray_w) MASKED in obs.")
+
+    if args_cli.peer_target_estimate:
+        env_cfg.peer_target_estimate = True
+        print("[EVAL] peer_target_estimate=True — peer target POINT channel enabled (Slice D).")
+    if args_cli.peer_target_estimate_ablate:
+        env_cfg.peer_target_estimate_ablate = True
+        print("[EVAL] peer_target_estimate_ablate=True — peer target POINT MASKED in obs.")
 
     if args_cli.step is not None:
         # Pin curriculum to a specific training step (more intuitive than zeroing

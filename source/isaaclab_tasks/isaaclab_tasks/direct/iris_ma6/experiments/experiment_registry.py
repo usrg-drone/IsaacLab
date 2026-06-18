@@ -962,6 +962,43 @@ register_experiment(ExperimentCfg(
 
 
 # ===========================================================================
+# T050D: Cooperative track re-acquisition — Slice D (usable peer target POSITION estimate)
+# ===========================================================================
+# After Slice C NO-GO + the ablation (peer BEARING proven unused -> fusion-hardness is the bottleneck),
+# ADD a resolved peer target POINT to obs (alongside the bearing). Reward axis OFF (info + shaping both
+# failed). CLEAN START (train from scratch, NOT warm-started) since obs_dim changes — no weight surgery.
+# Range = option A (sim true range; the point ~= GT target => UPPER-BOUND test that fusion is the
+# binding constraint; deploy-faithful range is future EKF/monocular). Launch (no --checkpoint):
+#   train_mappo_rnn_hydra.py --experiment_name t050d_posest --timesteps 400000 \
+#     env.peer_target_estimate=True env.enable_track_loss_scenario=True env.cooperation_metrics.enable=True
+# Eval on completion vs C2 0.385 + the ablation (env.peer_target_estimate_ablate=True) — now expected to
+# bite. GATE: reacq beats C2 0.385 AND ablation clearly worse.
+
+register_experiment(ExperimentCfg(
+    name="t050d_posest",
+    description="Ticket 050 Slice D: peer target POSITION estimate in obs (clean start, reward axis off)",
+    group="T050D",
+    env_overrides={
+        "peer_target_estimate": True,
+        "enable_track_loss_scenario": True,
+        "cooperation_metrics.enable": True,
+    },
+))
+
+register_experiment(ExperimentCfg(
+    name="t050d_ablation",
+    description="Ticket 050 Slice D ablation: t050d_posest with the peer target POINT masked",
+    group="T050D",
+    env_overrides={
+        "peer_target_estimate": True,
+        "peer_target_estimate_ablate": True,
+        "enable_track_loss_scenario": True,
+        "cooperation_metrics.enable": True,
+    },
+))
+
+
+# ===========================================================================
 # Experiment Suites
 # ===========================================================================
 

@@ -1,7 +1,8 @@
 # Stage P — Implementation Plan (Slice D): peer target-position estimate
 
-Default-off until A/B confirms. **ADD point alongside bearing** (deploy review) ⇒ obs_dim grows ⇒
-warm-start obs surgery. Range source = **A (bbox-depth)**. Reward axis OFF.
+Default-off until A/B confirms. **ADD point alongside bearing** (deploy review) ⇒ obs_dim grows.
+**CLEAN START** (engineer decision 2026-06-18): train from scratch — NO warm-start, NO weight surgery.
+Range source = **A (bbox-depth / oracle range)**. Reward axis OFF.
 
 ## Phase 0 — decide + verify (no training) [range source DECIDED = A]
 - ✓ Range source = A (bbox-raycaster depth); B/C/D future (D = EKF bearing-only, deploy-faithful).
@@ -20,18 +21,18 @@ warm-start obs surgery. Range source = **A (bbox-depth)**. Reward axis OFF.
 - 1b. Obs wiring: **ADD** `*_target_pos_est_w(3)` (+ validity from bbox_empty [+ age]) APPENDED at the
   end of the obs in BOTH paths (delayed + GT); KEEP `*_ray_w`. Behind cfg flag
   `peer_target_estimate.enabled` (off ⇒ exact baseline, original obs).
-- 1c. Warm-start obs-surgery utility: load t048 ckpt, copy old first-layer input columns, zero-init the
-  new ones, expand the skrl obs preprocessor (mean 0/var 1 for new dims). Verify behavior ≡ t048 at
-  step 0 (new dims zero-contributing). [the cost ADD incurs]
-- 1d. Ablation flag masks the new estimate slots (and, separately, the bearing) for clean attribution.
-- 1e. Experiments: `t050d_posest` (estimate ON, reward axis OFF, scenario+metrics) + reuse
-  `t050b_baseline_no_info` (C2 control). Update evaluate.py ablation wiring.
-- Test checkpoint: env smoke (16 envs) — estimate present, finite, near GT when detected (GT used only
-  to CHECK, never fed); flag-off bit-exact; surgery warm-start loads + matches t048 at init.
+- 1c. CLEAN START — no warm-start surgery (obs layout free; net trained from scratch on the new obs).
+- 1d. Ablation flag masks the new estimate slots (`peer_target_estimate_ablate`); bearing ablation
+  (`peer_bearing_ablate`) stays separate for clean attribution.
+- 1e. Experiments: `t050d_posest` (estimate ON, reward axis OFF, scenario+metrics) + `t050d_ablation`;
+  evaluate.py `--peer_target_estimate[_ablate]` flags added.
+- DONE 2026-06-18: built + env smoke 8/8 (obs 54->57; sizing consistent; point==GT(0.0000m) when peer
+  sees, 0 when blind/ablated; flag-off bit-exact dim). Helper `_peer_target_point` (oracle range A).
 
-## Phase 2 — go/no-go (1 seed, ~15h)
-- `t050d_posest` (warm-start t048 wide) vs `t050b_baseline_no_info` (C2). **+ ablation read** (mask the
-  point on the trained policy). Auto-eval-on-completion queue (reuse /tmp/t050c_eval_queue.sh pattern).
+## Phase 2 — go/no-go (1 seed, CLEAN START ~400k ≈ 37h)
+- `t050d_posest` trained FROM SCRATCH (--timesteps 400000, full curriculum, no --checkpoint) vs
+  `t050b_baseline_no_info` (C2). **+ ablation** (`--peer_target_estimate_ablate` on the trained policy,
+  must match obs dim with `--peer_target_estimate`). Auto-eval queue (reuse /tmp/t050c_eval_queue.sh).
 - **Gate:** reacq_success beats C2 0.385 AND the ablation is clearly worse (channel now used).
 - Watch `reacq_success_rate` + `pair_valid_rate` early (~20–40k) — kill if it drifts like the v1/v2 runs.
 
