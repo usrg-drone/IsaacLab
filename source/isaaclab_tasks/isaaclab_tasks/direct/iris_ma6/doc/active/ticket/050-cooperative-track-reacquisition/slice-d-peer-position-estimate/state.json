@@ -1,0 +1,10 @@
+{
+  "ticket_slug": "050-slice-d-peer-position-estimate",
+  "parent_ticket": "050-cooperative-track-reacquisition",
+  "predecessors": ["050-slice-b-team-reward (null)", "050-slice-c-recovery-shaping (NO-GO + ablation redirect)"],
+  "current_stage": "Q",
+  "last_approved_stage": "I",
+  "next_action": "PLAN DRAFTED (2026-06-18), awaiting engineer GO + the range-source decision. Hypothesis: the Slice-C ablation proved the peer BEARING is unused (masking it didn't hurt) -> bottleneck is fusion-hardness, not incentive. Fix: SWAP the unused bearing slot (ego_ray_w/other_ray_w) for a resolved target POINT p_est = cam_pos + range*bearing (dimension-preserving -> t048 warm-start, NO obs surgery). Reward axis OFF (info + shaping both failed). KEY DECISION (Phase 0, engineer): the range source r_i must be NON-GT (realizability) -- options A bbox-raycaster depth (rec., sensor-class; deploy needs depth), B carry-forward last triangulation (belief-through-gap), C monocular size->range. GATE: reacq_success beats C2 0.385 AND ablation (mask the point) now WORSE (channel used). RESERVE: learned cooperative observer if env-estimate insufficient. Docs: ticket.md, i_design.md, p_plan.md.",
+  "created": "2026-06-18",
+  "updated": "2026-06-18"
+}
