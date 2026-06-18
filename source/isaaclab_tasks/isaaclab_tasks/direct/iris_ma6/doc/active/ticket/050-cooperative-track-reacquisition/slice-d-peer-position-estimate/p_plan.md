@@ -1,27 +1,33 @@
 # Stage P — Implementation Plan (Slice D): peer target-position estimate
 
-Default-off until A/B confirms. Dim-preserving swap ⇒ no warm-start surgery. Reward axis OFF.
+Default-off until A/B confirms. **ADD point alongside bearing** (deploy review) ⇒ obs_dim grows ⇒
+warm-start obs surgery. Range source = **A (bbox-depth)**. Reward axis OFF.
 
-## Phase 0 — decide + verify (no training)
-- **Resolve the range-source Q** (i_design table A/B/C) with the engineer — gates everything.
-- Verify the chosen range is **non-GT** (audit: bbox_raycaster `_depths` provenance; confirm it is not
-  read from `_target_pos_w`). Confirm depth is exposed per-(env, agent) at reward/obs build time.
-- Confirm dim-preserving swap leaves obs_dim/state_space unchanged (so t048 loads directly).
+## Phase 0 — decide + verify (no training) [range source DECIDED = A]
+- ✓ Range source = A (bbox-raycaster depth); B/C/D future (D = EKF bearing-only, deploy-faithful).
+- Verify A is **non-GT-leaking**: audit `bbox_raycaster_v2._depths` provenance — it derives from the
+  detected bbox geometry, but confirm the obs path never substitutes `_target_pos_w`. (Sim depth is
+  true range = a SENSOR signal; the *deploy* realizability of range is a tracked sim2real item.)
+- Confirm per-(env,agent) depth is available at obs-build time (delayed + GT paths).
+- Scope the obs-dim delta (append `*_target_pos_est_w(3)` + age(1) per agent at the END) and the
+  cascade to state_space (finalize_observation_and_state_spaces already sizes it).
 
 ## Phase 1 — build + test (no training)
-- 1a. `target_estimate/` helper (or a method): `p_i_est = cam_pos_i + r_i·d_i`, valid-masked; pure,
-  unit-tested (0/1/N detections defined; invalid→zeros+flag=0; point recovers bearing vs peer_pos;
-  range error → bounded ego-aim error at small baseline; NO GT input — assert the function never
-  references the GT target).
-- 1b. Obs wiring: replace `ego_ray_w`/`other_ray_w` with `*_target_pos_est_w` in BOTH obs paths
-  (delayed + GT); add validity (reuse bbox_empty) [+ optional age]. Bit-exact guarded behind a cfg
-  flag `peer_target_estimate.enabled` (off ⇒ original bearing, exact baseline).
-- 1c. Extend the ablation flag to mask the estimate slots (`peer_bearing_ablate` → covers the new
-  channel; keep obs dim fixed).
-- 1d. Experiments: `t050d_posest` (estimate ON, reward axis OFF, scenario+metrics) and reuse
-  `t050b_baseline_no_info` as the C2 control. Update evaluate.py ablation flag wiring.
-- Test checkpoint: env smoke (16 envs) — estimate present, finite, points near GT when detected
-  (sanity, using GT only to CHECK, never to feed); flag-off bit-exact; warm-start loads (no surgery).
+- 1a. `target_estimate/` helper (or method): `p_i_est = cam_pos_i + r_i·d_i`, valid-masked; pure,
+  unit-tested (0/1/N defined; invalid→zeros+flag=0; point recovers bearing vs peer_pos; range error →
+  bounded ego-aim error at small baseline; **assert it never references the GT target** — the GT-leak
+  guard that this whole arc earned).
+- 1b. Obs wiring: **ADD** `*_target_pos_est_w(3)` (+ validity from bbox_empty [+ age]) APPENDED at the
+  end of the obs in BOTH paths (delayed + GT); KEEP `*_ray_w`. Behind cfg flag
+  `peer_target_estimate.enabled` (off ⇒ exact baseline, original obs).
+- 1c. Warm-start obs-surgery utility: load t048 ckpt, copy old first-layer input columns, zero-init the
+  new ones, expand the skrl obs preprocessor (mean 0/var 1 for new dims). Verify behavior ≡ t048 at
+  step 0 (new dims zero-contributing). [the cost ADD incurs]
+- 1d. Ablation flag masks the new estimate slots (and, separately, the bearing) for clean attribution.
+- 1e. Experiments: `t050d_posest` (estimate ON, reward axis OFF, scenario+metrics) + reuse
+  `t050b_baseline_no_info` (C2 control). Update evaluate.py ablation wiring.
+- Test checkpoint: env smoke (16 envs) — estimate present, finite, near GT when detected (GT used only
+  to CHECK, never fed); flag-off bit-exact; surgery warm-start loads + matches t048 at init.
 
 ## Phase 2 — go/no-go (1 seed, ~15h)
 - `t050d_posest` (warm-start t048 wide) vs `t050b_baseline_no_info` (C2). **+ ablation read** (mask the

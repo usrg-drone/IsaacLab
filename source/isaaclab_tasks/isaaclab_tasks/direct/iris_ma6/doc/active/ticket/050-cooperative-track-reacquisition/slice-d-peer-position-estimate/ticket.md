@@ -6,9 +6,10 @@
 **Status:** Stage Q (proposed). **Flow:** Full QRISPY.
 
 ## What
-Replace the (proven-unused) peer **bearing ray** `other_ray_w` in the obs with a resolved peer
-**target position estimate** (a 3D point) — so the policy gets a usable "where is the target" signal
-during a single-agent deficit instead of a bare line it cannot fuse. Re-run the A/B + the channel
+**Add** a resolved peer **target position estimate** (a 3D point + validity/age) to the obs, ALONGSIDE
+the existing bearing `other_ray_w` (deployment review 2026-06-18: keep the reliable raw bearing, add
+the uncertain point — do not replace) — so the policy gets a usable "where is the target" signal
+during a single-agent deficit instead of only a bare line it cannot fuse. Re-run the A/B + the channel
 ablation (now expected to bite).
 
 ## Why (what the arc proved)
@@ -21,10 +22,10 @@ ablation (now expected to bite).
   (See doc/experiments/2026-06-18_ticket050_sliceC_v2_NOGO_ablation.md.)
 
 ## Approach (1 line)
-Broadcast each agent's single-agent target *point* `agent_pos + range·bearing` (range from a SENSOR
-source, never GT) in place of its bearing ray; the lost agent re-aims via `normalize(peer_point −
-ego_pos)` — no implicit triangulation required. Reward = C2 baseline (info + shaping OFF) to isolate
-the obs channel. Details + the range-source decision in i_design.md.
+Broadcast each agent's single-agent target *point* `agent_pos + range·bearing` (range = SENSOR source,
+never GT — option A bbox-depth chosen) as a NEW obs channel kept alongside the bearing; the lost agent
+re-aims via `normalize(peer_point − ego_pos)` — no implicit triangulation required. Reward = C2
+baseline (info + shaping OFF) to isolate the obs channel. Details in i_design.md.
 
 ## Scope boundary
 - IN: peer (and ego) target-point estimate obs (dim-preserving swap of the bearing slots); the
@@ -42,7 +43,8 @@ the obs channel. Details + the range-source decision in i_design.md.
 - No collapse of base tracking (`pair_valid_rate`) vs t048 wide.
 
 ## Build-on
-t048 wide lead, warm-start. **Dim-preserving swap → loads directly, NO obs surgery.** Sysid LOCKED.
+t048 wide lead, warm-start. ADD changes obs_dim → **warm-start obs surgery** (append new dims at end,
+zero-init new first-layer columns, expand preprocessor); one-time testable utility. Sysid LOCKED.
 
 ## Key references
 - Slice C NO-GO + ablation: ../../../experiments/2026-06-18_ticket050_sliceC_v2_NOGO_ablation.md
