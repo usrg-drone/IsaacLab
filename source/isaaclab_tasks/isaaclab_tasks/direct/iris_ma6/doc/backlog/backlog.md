@@ -4,6 +4,21 @@ This document tracks features and improvements that are planned but not yet impl
 
 ---
 
+## Ticket 050 — Cooperative track re-acquisition (research direction)
+
+**Priority:** Research (the intended journal contribution)
+**Status:** Parked 2026-06-19 (was `doc/active/ticket/050-...`)
+**Full record:** [`050-cooperative-track-reacquisition/SUMMARY.md`](050-cooperative-track-reacquisition/SUMMARY.md)
+
+Agents re-acquire a lost target using peer information. Built + tested as 4 slices (A scenario,
+B team/difference reward, C recovery shaping, D peer position estimate), all **default-OFF** in the
+env. Result: reward axis null/no-go, information axis marginal (an **oracle** target point only got
+reacq 0.398 vs C2 0.385, ablation flat) → the binding constraint is the **control envelope /
+scenario recoverability**, not incentive or information. Code kept as the parked substrate; resume
+via the cfg flags. **First step if resumed: the control-envelope diagnostic** (see SUMMARY.md).
+
+---
+
 ## Visual Propeller Spinning
 
 **Priority:** Low
