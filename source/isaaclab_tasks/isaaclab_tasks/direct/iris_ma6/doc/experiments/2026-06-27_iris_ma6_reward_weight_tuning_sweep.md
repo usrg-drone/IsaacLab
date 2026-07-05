@@ -33,13 +33,27 @@ rebal_strong is stable, best==final; base *degraded* best 0.550 → final 0.468 
 4. TB corroboration: weights applied (bbox_rew 57→16 as 90→30; tri_rew 51→143 as 8→20); training
    healthy (σ 1.23–1.26, tracking_lost_fraction 0.02–0.05).
 
-## Decision / next
-Adopt **bbox_center=30, bbox_size=30, triangulation_reward_scale=20** as the new reward baseline,
-pending confirmation:
-- **From-scratch multi-seed (42/123/7), 400k each** — the sweep was single-seed warm-start fine-tune
-  from the t048 (90/30/8) basin, so the winner is start-biased; from-scratch should match/exceed 0.602.
-  Launched 2026-06-27 (`multirun_rebalstrong_confirm.bash`, tmux `rsconfirm`).
-- `trace_sigma` median/range check (standoff hypothesis).
+## From-scratch confirmation (2026-07-05) — the warm-start win did NOT transfer
+`rebal_strong` (30/30/20) trained FROM SCRATCH, 400k, seeds 42/123/7 (`multirun_rebalstrong_confirm.bash`),
+evaluated identically (1024 envs, baseline). **task_success = 0.418 ± 0.027** — far below the warm-start
+0.602, and *below the warm-start base 0.468*. All quality metrics worse (tri_rmse 2.28, tri_valid 0.60,
+track_maint 0.59). Tight across seeds → robust, not a bad seed.
+
+**Conclusion: the sweep's 0.602 was warm-start-DEPENDENT, not a property of the weights.** bbox_center=90
+is a dense, easy-to-learn bootstrap for basic tracking; warm-start from t048 supplied a bbox-90-trained
+tracker, so fine-tuning to 30/30/20 kept tracking and added cooperative geometry. From scratch, cutting
+bbox to 30 at step 0 starves the tracking bootstrap → the policy under-learns tracking → everything worse.
+(Training-time pair_valid looked fine ~0.85 stochastic; the deterministic full-difficulty eval exposes it.)
+
+## Decision / next — do NOT adopt constant 30/30/20 from scratch
+The rebalanced reward helps only WITH a bootstrap. Two ways to capture it:
+- **(a) Warm-start / fine-tune pipeline** (proven 0.602): train a bbox-90 tracker, then rebalance-fine-tune.
+- **(b) bbox-rebalance CURRICULUM** (bbox 90→30 over training) in one from-scratch run — bootstrap early,
+  rebalance late. This is the Slice-B `reward_rebalance` machinery, currently gated behind
+  `information_reward.enabled`; decouple the bbox-schedule part (small change) and re-confirm from scratch.
+- Still open: `trace_sigma` median/range check (standoff hypothesis) on the warm-start runs.
+
+Artifacts: `experiments/outputs/rwtune/{...,rsconfirm_seed{42,123,7}}.json`, runs `*rwtune_*` / `*rsconfirm_*`.
 
 Artifacts: `experiments/outputs/rwtune/{base_confirm,tri_up,rebal_mid,rebal_strong}{,_final}.json`,
 runs `logs/skrl/iris_ma6/*rwtune_*`, sweep commit `be85ff2753`.
