@@ -2097,9 +2097,14 @@ class IrisMA6TestEnv(DirectMARLEnv):
                 t=float(self._sim_time[0].item()),
             )
 
-        # bbox reward scales: curriculum-interpolated 90/30 -> team-phase 30/20 by progress_rebalance
-        # (no-op when the information reward is off -> p_rebal contribution is 0, scales unchanged).
-        _p_rebal = self.progress_rebalance if self._info_reward is not None else 0.0
+        # bbox reward scales: curriculum-interpolated 90 -> *_team target by progress_rebalance.
+        # Driven by the curriculum when the Slice-B info reward OR the standalone bbox-rebalance
+        # curriculum is on (bootstrap tracking with bbox=90 early, then rebalance to the team weights
+        # over reward_rebalance_{start,end}_step). No-op (p_rebal=0) otherwise -> bit-exact baseline.
+        _rebal_active = (self._info_reward is not None) or self.cfg.enable_bbox_rebalance_curriculum
+        if self._info_reward is None and self.cfg.enable_bbox_rebalance_curriculum:
+            self.progress_rebalance = self.cfg.curriculum.get_reward_rebalance_progress(current_step)
+        _p_rebal = self.progress_rebalance if _rebal_active else 0.0
         bbox_center_scale = self.cfg.bbox_center_reward_scale + _p_rebal * (
             self.cfg.bbox_center_reward_scale_team - self.cfg.bbox_center_reward_scale
         )

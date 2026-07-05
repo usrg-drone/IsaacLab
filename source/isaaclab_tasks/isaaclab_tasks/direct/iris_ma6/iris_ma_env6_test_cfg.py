@@ -910,6 +910,15 @@ class IrisMA6TestEnvCfg(DirectMARLEnvCfg):
     bbox_size_reward_scale_team: float = 20.0
     """Ticket 050 Slice B: bbox_size scale at full team-reward strength (rebalance ramp target)."""
 
+    enable_bbox_rebalance_curriculum: bool = False
+    """Standalone bbox-rebalance curriculum (decoupled from the Slice-B info reward). When True, the
+    bbox_center/bbox_size scales ramp from their base values toward the ``*_team`` targets over
+    ``curriculum.reward_rebalance_{start,end}_step`` — bootstrap tracking with bbox=90 early, then
+    rebalance to the team weights. Lets a single FROM-SCRATCH run get both the tracking bootstrap and
+    the rebalanced end-state (the reward-tuning finding: constant 30/30/20 from scratch starves the
+    bootstrap). Default False = bit-exact baseline. Set the ``*_team`` targets to the desired end
+    weights (e.g. bbox_size_reward_scale_team=30 to hold bbox_size flat)."""
+
     bbox_size_reward_scale: float = 30.0
     """Reward scale for appropriate bbox size (~20% of image area).
     Ticket 047 Slice 3 (2026-06-04): halved 60 → 30. Under t046's closer spawn,
